@@ -7,15 +7,27 @@
 #include "TicTacToe.h"
 #include "TicTacToeDlg.h"
 #include "afxdialogex.h"
-
+#include <string>
+#include <iostream>
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
 
+#include <winsock2.h>
+
+#define DEFAULT_PORT	5150
+#define DEFAULT_BUFFER	2048
+
+HWND hWnd_LB;
+HWND hWnd_Dlg;
 
 // Диалоговое окно CTicTacToeDlg
 
+bool	m_IsConnected;
+SOCKET	m_sClient;
+CTicTacToeDlg *mainDlg;
 
+UINT ListenThread(PVOID lpParam);
 
 CTicTacToeDlg::CTicTacToeDlg(CWnd* pParent /*=nullptr*/)
 	: CDialog(IDD_TICTACTOE_DIALOG, pParent)
@@ -26,12 +38,14 @@ CTicTacToeDlg::CTicTacToeDlg(CWnd* pParent /*=nullptr*/)
 void CTicTacToeDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialog::DoDataExchange(pDX);
+	DDX_Control(pDX, IDC_LISTBOX, m_ListBox);
 }
 
 BEGIN_MESSAGE_MAP(CTicTacToeDlg, CDialog)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
 	ON_WM_LBUTTONDOWN()
+	ON_BN_CLICKED(IDC_CONNECT, &CTicTacToeDlg::OnBnClickedConnect)
 END_MESSAGE_MAP()
 
 
@@ -47,7 +61,25 @@ BOOL CTicTacToeDlg::OnInitDialog()
 	SetIcon(m_hIcon, FALSE);		// Мелкий значок
 
 	// TODO: добавьте дополнительную инициализацию
+	char Str[128];
 
+	GetDlgItem(IDC_SERVER)->SetWindowText("localhost");
+	//sprintf_s(Str, sizeof(Str), "%d", DEFAULT_COUNT);
+	//GetDlgItem(IDC_NUMBER)->SetWindowText(Str);
+	sprintf_s(Str, sizeof(Str), "%d", DEFAULT_PORT);
+	GetDlgItem(IDC_PORT)->SetWindowText(Str);
+	//GetDlgItem(IDC_MESSAGE)->SetWindowText(DEFAULT_MESSAGE);
+	//m_NoEcho.SetCheck(0);
+	SetConnected(false);
+	hWnd_LB = m_ListBox.m_hWnd;   // Для ListenThread
+	hWnd_Dlg = this->m_hWnd;
+	mainDlg = this;
+	int i;
+	for (i = 0; i < 11; i++) {
+		Pastuszak[i] = 0;
+		posX[i] = 0;
+		posY[i] = 0;
+	}
 	return TRUE;  // возврат значения TRUE, если фокус не передан элементу управления
 }
 
@@ -79,7 +111,7 @@ void CTicTacToeDlg::OnPaint()
 		CPaintDC dc(this); // device context for painting
 		CClientDC cdc(this);
 		DrawGrid(&dc);
-		
+
 		CDialog::OnPaint();
 	}
 }
@@ -90,6 +122,22 @@ HCURSOR CTicTacToeDlg::OnQueryDragIcon()
 {
 	return static_cast<HCURSOR>(m_hIcon);
 }
+
+
+void CTicTacToeDlg::SetConnected(bool IsConnected)
+{
+	m_IsConnected = IsConnected;
+
+	//GetDlgItem(IDC_SEND)->EnableWindow(IsConnected);
+	//GetDlgItem(IDC_MESSAGE)->EnableWindow(IsConnected);
+	//GetDlgItem(IDC_NUMBER)->EnableWindow(IsConnected);
+	//GetDlgItem(IDC_NO_ECHO)->EnableWindow(IsConnected);
+	GetDlgItem(IDC_SERVER)->EnableWindow(!IsConnected);
+	GetDlgItem(IDC_PORT)->EnableWindow(!IsConnected);
+	GetDlgItem(IDC_CONNECT)->EnableWindow(!IsConnected);
+}
+
+
 
 // This Function Draw the tic tac toe GRID on the screen
 void CTicTacToeDlg::DrawGrid(CPaintDC* pdc)
@@ -231,7 +279,7 @@ void CTicTacToeDlg::DrawO(CClientDC* pdc, int x, int y)
 
 void CTicTacToeDlg::PlotPlayer(CPoint point)
 {
-	UpdateData(TRUE);
+	//UpdateData(TRUE);
 	m_Player++;
 	// User Choice to play with X.
 
@@ -245,12 +293,12 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (Pastuszak[1] != 0)
 		{
 			m_Player--;
-			MessageBox(L"This square is aready taken.");
+			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
 
-		if (m_Player%2 == 0)
+		if (m_Player % 2 == 0)
 		{
 			// Top - Left
 			//Set that an X was Plot.
@@ -278,7 +326,7 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (Pastuszak[2] != 0)
 		{
 			m_Player--;
-			MessageBox(L"This square is aready taken.");
+			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
@@ -310,7 +358,7 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (Pastuszak[3] != 0)
 		{
 			m_Player--;
-			MessageBox(L"This square is aready taken.");
+			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
@@ -344,7 +392,7 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (Pastuszak[4] != 0)
 		{
 			m_Player--;
-			MessageBox(L"This square is aready taken.");
+			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
@@ -378,7 +426,7 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (Pastuszak[5] != 0)
 		{
 			m_Player--;
-			MessageBox(L"This square is aready taken.");
+			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
@@ -414,7 +462,7 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (Pastuszak[6] != 0)
 		{
 			m_Player--;
-			MessageBox(L"This square is aready taken.");
+			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
@@ -452,7 +500,7 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (Pastuszak[7] != 0)
 		{
 			m_Player--;
-			MessageBox(L"This square is aready taken.");
+			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
@@ -488,7 +536,7 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (Pastuszak[8] != 0)
 		{
 			m_Player--;
-			MessageBox(L"This square is aready taken.");
+			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
@@ -522,7 +570,7 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (Pastuszak[9] != 0)
 		{
 			m_Player--;
-			MessageBox(L"This square is aready taken.");
+			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
@@ -586,28 +634,61 @@ void CTicTacToeDlg::DrawLine(CClientDC* pdc, int x, int y, int x2, int y2)// Red
 
 void CTicTacToeDlg::OnLButtonDown(UINT nFlags, CPoint point)
 {
-	// TODO: добавьте свой код обработчика сообщений или вызов стандартного
 	if ((nFlags & MK_LBUTTON) == MK_LBUTTON)
 	{
+		char	szMessage[1024];// Сообщение для отправки
+		char	szBuffer[DEFAULT_BUFFER];
+		int		ret, i;
+
+		char	Str[256];
 		UpdateData(TRUE);
 
-		// Check to see if the hole grid is filled out.
-			int i, g = 1;
-			for (i = 1; i < 10; i++)
-			{
-				if (Pastuszak[i] == 1 || Pastuszak[i] == 2) g++;
-			}
+		long x = point.x;
+		long y = point.y;
 
-			// Show a message if g = 9 to tell the user it's game over.
-			if (g >= 10) {
-				MessageBox(L"Game Over", L"Game Over.");
-				//GAME_STATUS = 3; // Game Over.
-				return;
-			}
+		std::string string1 = std::to_string(x);
+		std::string string2 = std::to_string(y);
+		std::string string3 = string1 + " " + string2;
+		const char* cstr = string3.c_str();
 
-		PlotPlayer(point);
-		CheckWhoWon();
+		sprintf_s(szMessage, sizeof(szMessage), cstr);
+
+		// Отправка данных 
+		ret = send(m_sClient, szMessage, strlen(szMessage), 0);
+		if (ret == 0)
+			;
+		else if (ret == SOCKET_ERROR)
+		{
+			sprintf_s(Str, sizeof(Str), "send() failed: %d",
+				WSAGetLastError());
+			m_ListBox.AddString((LPTSTR)Str);
+			;
+		}
+
 	}
+
+	// Обработка принятых даннных(наверное)
+	//if ((nFlags & MK_LBUTTON) == MK_LBUTTON)
+	//{
+	//	UpdateData(TRUE);
+
+	//	// Check to see if the hole grid is filled out.
+	//	int i, g = 1;
+	//	for (i = 1; i < 10; i++)
+	//	{
+	//		if (Pastuszak[i] == 1 || Pastuszak[i] == 2) g++;
+	//	}
+
+	//	// Show a message if g = 9 to tell the user it's game over.
+	//	if (g >= 10) {
+	//		MessageBox("Game Over", "Game Over.");
+	//		//GAME_STATUS = 3; // Game Over.
+	//		return;
+	//	}
+
+	//	PlotPlayer(point);
+	//	CheckWhoWon();
+	//}
 	CDialog::OnLButtonDown(nFlags, point);
 }
 
@@ -633,10 +714,10 @@ void CTicTacToeDlg::CheckWhoWon()
 		DrawLine(&pdc, 50, 50, 350, 350);
 		// Check who won
 		if ((m_Player + 1) == iLook) {
-			MessageBox(L"Player won the game.");
+			MessageBox("Player won the game.");
 		}
 		else {
-			MessageBox(L"Computer won the game.");
+			MessageBox("Computer won the game.");
 		}
 		GAME_STATUS = 3;
 		return;
@@ -650,10 +731,10 @@ void CTicTacToeDlg::CheckWhoWon()
 		DrawLine(&pdc, 350, 50, 50, 350);
 		// Check who won
 		if ((m_Player + 1) == iLook) {
-			MessageBox(L"Player won the game.");
+			MessageBox("Player won the game.");
 		}
 		else {
-			MessageBox(L"Computer won the game.");
+			MessageBox("Computer won the game.");
 		}
 		GAME_STATUS = 3;
 		return;
@@ -676,10 +757,10 @@ void CTicTacToeDlg::CheckWhoWon()
 		// Check who won
 		DrawLine(&pdc, 50, 100, 350, 100);
 		if ((m_Player + 1) == iLook) {
-			MessageBox(L"Player won the game.");
+			MessageBox("Player won the game.");
 		}
 		else {
-			MessageBox(L"Computer won the game.");
+			MessageBox("Computer won the game.");
 		}
 		GAME_STATUS = 3;
 
@@ -695,10 +776,10 @@ void CTicTacToeDlg::CheckWhoWon()
 		DrawLine(&pdc, 300, 50, 300, 350);
 		// Check who won
 		if ((m_Player + 1) == iLook) {
-			MessageBox(L"Player won the game.");
+			MessageBox("Player won the game.");
 		}
 		else {
-			MessageBox(L"Computer won the game.");
+			MessageBox("Computer won the game.");
 		}
 		GAME_STATUS = 3;
 		return;
@@ -721,10 +802,10 @@ void CTicTacToeDlg::CheckWhoWon()
 		// Check who won
 		DrawLine(&pdc, 50, 300, 350, 300);
 		if ((m_Player + 1) == iLook) {
-			MessageBox(L"Player won the game.");
+			MessageBox("Player won the game.");
 		}
 		else {
-			MessageBox(L"Computer won the game.");
+			MessageBox("Computer won the game.");
 		}
 		GAME_STATUS = 3;
 		return;
@@ -739,10 +820,10 @@ void CTicTacToeDlg::CheckWhoWon()
 		DrawLine(&pdc, 100, 50, 100, 350);
 		// Check who won
 		if ((m_Player + 1) == iLook) {
-			MessageBox(L"Player won the game.");
+			MessageBox("Player won the game.");
 		}
 		else {
-			MessageBox(L"Computer won the game.");
+			MessageBox("Computer won the game.");
 		}
 		GAME_STATUS = 3;
 
@@ -768,10 +849,10 @@ void CTicTacToeDlg::CheckWhoWon()
 		// Check who won
 		DrawLine(&pdc, 200, 50, 200, 350);
 		if ((m_Player + 1) == iLook) {
-			MessageBox(L"Player won the game.");
+			MessageBox("Player won the game.");
 		}
 		else {
-			MessageBox(L"Computer won the game.");
+			MessageBox("Computer won the game.");
 		}
 		GAME_STATUS = 3;
 		return;
@@ -787,13 +868,152 @@ void CTicTacToeDlg::CheckWhoWon()
 		// Check who won
 		DrawLine(&pdc, 50, 200, 350, 200);
 		if ((m_Player + 1) == iLook) {
-			MessageBox(L"Player won the game.");
+			MessageBox("Player won the game.");
 		}
 		else {
-			MessageBox(L"Computer won the game.");
+			MessageBox("Computer won the game.");
 		}
 
 		GAME_STATUS = 3;
 		return;
 	}
 }
+
+
+void CTicTacToeDlg::OnBnClickedConnect()
+{
+	//Сначала опишем необходимые локальные переменные и загрузим библиотеку Winsock :
+	char		szServer[128];	// Имя или IP-адрес сервера
+	int		iPort;			// Порт
+	WSADATA	wsd;
+	struct sockaddr_in 	server;
+	struct hostent* host = NULL;
+	char Str[256];
+
+	GetDlgItem(IDC_SERVER)->
+		GetWindowText(szServer, sizeof(szServer));
+	GetDlgItem(IDC_PORT)->GetWindowText(Str, sizeof(Str));
+	iPort = atoi(Str);
+	if (iPort <= 0 || iPort >= 0x10000)
+	{
+		m_ListBox.AddString((LPTSTR)"Port number incorrect");
+		return;
+	}
+
+	if (WSAStartup(MAKEWORD(2, 2), &wsd) != 0)
+	{
+		m_ListBox.AddString
+		((LPTSTR)"Failed to load Winsock library!");
+		return;
+	}
+
+	//Далее создадим сокет :
+	m_sClient = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);//0
+	if (m_sClient == INVALID_SOCKET)
+	{
+		sprintf_s(Str, sizeof(Str), "socket() failed: %d\n",
+			WSAGetLastError());
+		m_ListBox.AddString((LPTSTR)Str);
+		return;
+	}
+	server.sin_family = AF_INET;
+	server.sin_port = htons(iPort);
+	server.sin_addr.s_addr = inet_addr(szServer);
+
+	//Если адрес сервера не представлен в форме "aaa.bbb.ccc.ddd", это имя узла.
+	//Пробуем его разрешить, после этого вызываем функцию connect().
+	//Наконец, перенастраиваем пользовательский интерфейс.
+	if (server.sin_addr.s_addr == INADDR_NONE)
+	{
+		host = gethostbyname(szServer);
+		if (host == NULL)
+		{
+			sprintf_s(Str, sizeof(Str),
+				"Unable to resolve server: %s", szServer);
+			m_ListBox.AddString((LPTSTR)Str);
+			return;
+		}
+		CopyMemory(&server.sin_addr, host->h_addr_list[0],
+			host->h_length);
+	}
+
+	if (connect(m_sClient, (struct sockaddr*)&server,
+		sizeof(server)) == SOCKET_ERROR)
+	{
+		sprintf_s(Str, sizeof(Str), "connect() failed: %d",
+			WSAGetLastError());
+		m_ListBox.AddString((LPTSTR)Str);
+		return;
+	}
+	SetConnected(true);
+	sprintf_s(Str, sizeof(Str), "connect() success");
+	m_ListBox.AddString((LPTSTR)Str);
+	AfxBeginThread(ListenThread, NULL);
+}
+
+void CTicTacToeDlg::ComputeInformation(CPoint point)
+{
+	// Обработка принятых даннных(наверное)
+	int i, g = 1;
+	for (i = 1; i < 10; i++)
+	{
+		if (Pastuszak[i] == 1 || Pastuszak[i] == 2) g++;
+	}
+
+	// Show a message if g = 9 to tell the user it's game over.
+	if (g >= 10) {
+		MessageBox("Game Over", "Game Over.");
+		//GAME_STATUS = 3; // Game Over.
+		return;
+	}
+
+	PlotPlayer(point);
+	CheckWhoWon();
+}
+
+UINT ListenThread(PVOID lpParam)
+{
+	// Прием данных
+	char	szBuffer[DEFAULT_BUFFER];
+	int		ret;
+	char	Str[256];
+	CListBox* pLB =
+		(CListBox*)(CListBox::FromHandle(hWnd_LB));
+
+	CTicTacToeDlg* pDlg = (CTicTacToeDlg*)(CTicTacToeDlg::FromHandle(hWnd_Dlg));
+	while (true)
+	{
+		ret = recv(m_sClient, szBuffer, DEFAULT_BUFFER, 0);
+		if (ret == 0)	// Корректное завершение
+			continue;
+		else if (ret == SOCKET_ERROR)
+		{
+			sprintf_s(Str, sizeof(Str), "recv() failed: %d", WSAGetLastError());
+			pLB->AddString((LPTSTR)Str);
+			return 1;
+		}
+		szBuffer[ret] = '\0';
+		sprintf_s(Str, sizeof(Str), "RECV [%d bytes]: '%s'", ret, szBuffer);
+		pLB->AddString((LPTSTR)Str);
+		int i = 0;
+		CString str = szBuffer;
+		CString str1;
+		CString str2;
+		while (szBuffer[i] != ' ')
+		{
+			str1.Append((CString)szBuffer[i]);
+			i++;
+		}
+		i++;
+		while (szBuffer[i] != '\0')
+		{
+			str2.Append((CString)szBuffer[i]);
+			i++;
+		}
+		CPoint point;
+		point.x = atoi(str1);
+		point.y = atoi(str2);
+		mainDlg->ComputeInformation(point);
+	}
+}
+
