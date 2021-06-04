@@ -9,23 +9,22 @@
 #include "afxdialogex.h"
 #include <string>
 #include <iostream>
+#include <winsock2.h>
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
-
-#include <winsock2.h>
 
 #define DEFAULT_PORT	5150
 #define DEFAULT_BUFFER	2048
 
 HWND hWnd_LB;
-HWND hWnd_Dlg;
+HWND hWnd_Dlg;// Дискриптор окна
 
 // Диалоговое окно CTicTacToeDlg
-
-bool	m_IsConnected;
-SOCKET	m_sClient;
-CTicTacToeDlg *mainDlg;
+bool bPrint = false; // Выводить ли отладочные сообщения
+bool m_IsConnected;
+SOCKET m_sClient;
+CTicTacToeDlg* mainDlg;
 
 UINT ListenThread(PVOID lpParam);
 
@@ -39,6 +38,7 @@ void CTicTacToeDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialog::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_LISTBOX, m_ListBox);
+	DDX_Control(pDX, IDC_STATUS, m_status);
 }
 
 BEGIN_MESSAGE_MAP(CTicTacToeDlg, CDialog)
@@ -46,6 +46,9 @@ BEGIN_MESSAGE_MAP(CTicTacToeDlg, CDialog)
 	ON_WM_QUERYDRAGICON()
 	ON_WM_LBUTTONDOWN()
 	ON_BN_CLICKED(IDC_CONNECT, &CTicTacToeDlg::OnBnClickedConnect)
+	ON_BN_CLICKED(IDC_DISCONNECT, &CTicTacToeDlg::OnBnClickedDisconnect)
+	ON_BN_CLICKED(IDC_PRINT, &CTicTacToeDlg::OnBnClickedPrint)
+	ON_BN_CLICKED(IDC_REFRESH, &CTicTacToeDlg::OnBnClickedRefresh)
 END_MESSAGE_MAP()
 
 
@@ -64,22 +67,21 @@ BOOL CTicTacToeDlg::OnInitDialog()
 	char Str[128];
 
 	GetDlgItem(IDC_SERVER)->SetWindowText("localhost");
-	//sprintf_s(Str, sizeof(Str), "%d", DEFAULT_COUNT);
-	//GetDlgItem(IDC_NUMBER)->SetWindowText(Str);
+
 	sprintf_s(Str, sizeof(Str), "%d", DEFAULT_PORT);
 	GetDlgItem(IDC_PORT)->SetWindowText(Str);
-	//GetDlgItem(IDC_MESSAGE)->SetWindowText(DEFAULT_MESSAGE);
-	//m_NoEcho.SetCheck(0);
+
 	SetConnected(false);
 	hWnd_LB = m_ListBox.m_hWnd;   // Для ListenThread
-	hWnd_Dlg = this->m_hWnd;
+	hWnd_Dlg = this->m_hWnd;     // Для ListenThread
 	mainDlg = this;
 	int i;
 	for (i = 0; i < 11; i++) {
-		Pastuszak[i] = 0;
+		stepsGrid[i] = 0;
 		posX[i] = 0;
 		posY[i] = 0;
 	}
+
 	return TRUE;  // возврат значения TRUE, если фокус не передан элементу управления
 }
 
@@ -108,9 +110,10 @@ void CTicTacToeDlg::OnPaint()
 	}
 	else
 	{
-		CPaintDC dc(this); // device context for painting
+		CPaintDC dc(this);
 		CClientDC cdc(this);
-		DrawGrid(&dc);
+
+		DrawGrid(&dc);// Отрисовка игрового поля
 
 		CDialog::OnPaint();
 	}
@@ -123,196 +126,157 @@ HCURSOR CTicTacToeDlg::OnQueryDragIcon()
 	return static_cast<HCURSOR>(m_hIcon);
 }
 
-
-void CTicTacToeDlg::SetConnected(bool IsConnected)
-{
-	m_IsConnected = IsConnected;
-
-	//GetDlgItem(IDC_SEND)->EnableWindow(IsConnected);
-	//GetDlgItem(IDC_MESSAGE)->EnableWindow(IsConnected);
-	//GetDlgItem(IDC_NUMBER)->EnableWindow(IsConnected);
-	//GetDlgItem(IDC_NO_ECHO)->EnableWindow(IsConnected);
-	GetDlgItem(IDC_SERVER)->EnableWindow(!IsConnected);
-	GetDlgItem(IDC_PORT)->EnableWindow(!IsConnected);
-	GetDlgItem(IDC_CONNECT)->EnableWindow(!IsConnected);
-}
-
-
-
-// This Function Draw the tic tac toe GRID on the screen
 void CTicTacToeDlg::DrawGrid(CPaintDC* pdc)
 {
-	// Declare and create the pens
-	CPen GridSize(PS_SOLID, 7, RGB(0, 0, 0));
+	CPen blackPen(PS_SOLID, 7, RGB(0, 0, 0));
 
-	// Get the Drawing Area.
-	CRect lRect;
-	GetClientRect(lRect);
-	lRect.NormalizeRect();
+	CRect Rect;
+	GetClientRect(Rect);
+	Rect.NormalizeRect();
 
-	// Caclulate the distane 
-	CPen* lOldPen;	// The Old penobject
+	CPen* pOldPen= pdc->SelectObject(&blackPen);
 
-	CPoint pStart;	// Define the starting point
-	CPoint pEnd;	// Define the ending point
+	CPoint pStart;
+	CPoint pFinish;
 
-	// X1=50 X2 =(300-50) 
+	// Горизонтальные
 	pStart.y = 150;
 	pStart.x = 50;
-	pEnd.y = pStart.y;
-	pEnd.x = 350;
-
-	lOldPen = pdc->SelectObject(&GridSize);
-	// Draw the line
+	pFinish.y = pStart.y;
+	pFinish.x = 350;
 	pdc->MoveTo(pStart);
-	pdc->LineTo(pEnd);
+	pdc->LineTo(pFinish);
 
-	// Y1=150
+
 	pStart.y = 250;
 	pStart.x = 50;
-	pEnd.y = pStart.y;
-	pEnd.x = 350;
-
-	lOldPen = pdc->SelectObject(&GridSize);
-	// Draw the line
+	pFinish.y = pStart.y;
+	pFinish.x = 350;
 	pdc->MoveTo(pStart);
-	pdc->LineTo(pEnd);
+	pdc->LineTo(pFinish);
 
 
-	// DRAW THE VARTICAL LINES NOW
-
+	// Вертикальные
 	pStart.y = 50;
 	pStart.x = 150;
-
-	pEnd.y = 350;
-	pEnd.x = pStart.x;
-
-	lOldPen = pdc->SelectObject(&GridSize);
-	// Draw the line
+	pFinish.y = 350;
+	pFinish.x = pStart.x;
 	pdc->MoveTo(pStart);
-	pdc->LineTo(pEnd);
+	pdc->LineTo(pFinish);
 
 
 	pStart.y = 50;
 	pStart.x = 250;
-
-	pEnd.y = 350;
-	pEnd.x = pStart.x;
-
-	lOldPen = pdc->SelectObject(&GridSize);
-	// Draw the line
+	pFinish.y = 350;
+	pFinish.x = pStart.x;
 	pdc->MoveTo(pStart);
-	pdc->LineTo(pEnd);
-
-
-	// Select the original pen
-	pdc->SelectObject(lOldPen);
+	pdc->LineTo(pFinish);
 }
 
 void CTicTacToeDlg::DrawX(CClientDC* pdc, int x, int y)
 {
-	// Check if the user is between anything
-	// Declare and create the pens
 	CPen XSize(PS_SOLID, 7, RGB(0, 0, 0));
 
-	// Get the Drawing Area.
-	CRect lRect;
-	GetClientRect(lRect);
-	lRect.NormalizeRect();
+	CRect Rect;
+	GetClientRect(Rect);
+	Rect.NormalizeRect();
 
-	// Caclulate the distane 
-	CPen* lOldPen;	// The Old penobject
+	CPen* pOldPen;
 
-	CPoint pStart;	// Define the starting point
-	CPoint pEnd;	// Define the ending point
+	CPoint pStart;
+	CPoint pEnd;
 
-	// Starting Point
 	pStart.y = y;
 	pStart.x = x;
-
 	pEnd.y = y + 50;
 	pEnd.x = x + 50;
 
-	lOldPen = pdc->SelectObject(&XSize);
-	// Draw the line
+	pOldPen = pdc->SelectObject(&XSize);
 	pdc->MoveTo(pStart);
 	pdc->LineTo(pEnd);
 
-	// DO the Other Side
-
-	// Starting Point
 	pStart.y = y;
 	pStart.x = x + 50;
-
 	pEnd.y = y + 50;
 	pEnd.x = x;
 
-	lOldPen = pdc->SelectObject(&XSize);
-	// Draw the line
+	pOldPen = pdc->SelectObject(&XSize);
 	pdc->MoveTo(pStart);
 	pdc->LineTo(pEnd);
 
-
-	// Select the original pen
-	pdc->SelectObject(lOldPen);
+	pdc->SelectObject(pOldPen);
 }
 
 void CTicTacToeDlg::DrawO(CClientDC* pdc, int x, int y)
 {
-	// Declare and create the pens
 	CPen OSize(PS_SOLID, 6, RGB(0, 0, 0));
 	CBrush lBlack(RGB(192, 192, 192));
 
-	CPen* lOldPen;	// The Old penobject
-	CBrush* lOldBrush;
+	CPen* pOldPen;
+	CBrush* pOldBrush;
 
-	lOldPen = pdc->SelectObject(&OSize);
-	lOldBrush = pdc->SelectObject(&lBlack);
+	pOldPen = pdc->SelectObject(&OSize);
+	pOldBrush = pdc->SelectObject(&lBlack);
 
 	pdc->Ellipse(x, y, x + 75, y + 75);
 
+	pdc->SelectObject(pOldPen);
+	pdc->SelectObject(pOldBrush);
+}
 
-	// Select the original pen
-	pdc->SelectObject(lOldPen);
-	pdc->SelectObject(lOldBrush);
+void CTicTacToeDlg::DrawLine(CClientDC* pdc, int x, int y, int x2, int y2)// Фиолетовая линия
+{
+	CPen line(PS_SOLID, 7, RGB(125, 0, 200));
+
+	CRect Rect;
+	GetClientRect(Rect);
+	Rect.NormalizeRect();
+
+	CPen* pOldPen;
+
+	CPoint pStart;
+	CPoint pFinish;
+
+	pStart.y = y;
+	pStart.x = x;
+	pFinish.y = y2;
+	pFinish.x = x2;
+
+	pOldPen = pdc->SelectObject(&line);
+	pdc->MoveTo(pStart);
+	pdc->LineTo(pFinish);
+
+	pdc->SelectObject(pOldPen);
 }
 
 void CTicTacToeDlg::PlotPlayer(CPoint point)
 {
-	//UpdateData(TRUE);
+	if (GAME_STATUS == 3)
+		return;
 	m_Player++;
-	// User Choice to play with X.
 
-	CClientDC sdc(this); // device context for painting
-	//CString strPoint;
-	//strPoint.Format("%d, %d, %d",point.x,point.y, m_Player);
-	// Check to see where then mouse was click
+	CClientDC sdc(this);// device context for painting
 	if (point.x > 47 && point.x < 143 && point.y > 47 && point.y < 143)
 	{
-		// Check if their is a player in that postion.
-		if (Pastuszak[1] != 0)
+		if (stepsGrid[1] != 0)
 		{
 			m_Player--;
 			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
-
-		if (m_Player % 2 == 0)
+		if (m_Player % 2 != 0)
 		{
 			// Top - Left
-			//Set that an X was Plot.
-			Pastuszak[1] = 1;
+			stepsGrid[1] = 1;
 			posX[1] = 70;
 			posY[1] = 70;
 			DrawX(&sdc, posX[1], posY[1]);
 			GridErr = 0;
 			return;
 		}
-		else if (m_Player % 2 == 1) {
-			// Set the X & Y positions to draw the cricle
-			// Set that an O was plot.
-			Pastuszak[1] = 2;
+		else if (m_Player % 2 != 1) {
+			stepsGrid[1] = 2;
 			posX[1] = 65;
 			posY[1] = 65;
 			DrawO(&sdc, posX[1], posY[1]);
@@ -322,275 +286,225 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 
 	}
 	else if (point.x > 152 && point.x < 249 && point.y > 47 && point.y < 143) {
-		// Check if their is a player in that postion.
-		if (Pastuszak[2] != 0)
+		if (stepsGrid[2] != 0)
 		{
 			m_Player--;
 			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
-		}
-		// Top - Middle
-		if (m_Player % 2 == 0)
+		}	
+		if (m_Player % 2 != 0)
 		{
-			Pastuszak[2] = 1;
+			// Top - Middle
+			stepsGrid[2] = 1;
 			posX[2] = 170;
 			posY[2] = 70;
-
 			DrawX(&sdc, posX[2], posY[2]);
 			GridErr = 0;
 			return;
 		}
-		else if (m_Player % 2 == 1) {
-			// Set the X & Y positions to draw the cricle
-
-			Pastuszak[2] = 2;
+		else if (m_Player % 2 != 1) {
+			stepsGrid[2] = 2;
 			posX[2] = 165;
 			posY[2] = 65;
 			DrawO(&sdc, posX[2], posY[2]);
 			GridErr = 0;
 			return;
 		}
-
 	}
 	else if (point.x > 253 && point.x < 350 && point.y > 47 && point.y < 143) {
-		// Check if their is a player in that postion.
-		if (Pastuszak[3] != 0)
+		if (stepsGrid[3] != 0)
 		{
 			m_Player--;
 			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
-		if (m_Player % 2 == 0)
+		if (m_Player % 2 != 0)
 		{
 			// Top - Right
-
-			Pastuszak[3] = 1;
+			stepsGrid[3] = 1;
 			posX[3] = 270;
 			posY[3] = 70;
-
 			DrawX(&sdc, posX[3], posY[3]);
 			GridErr = 0;
-
 			return;
 		}
-		else if (m_Player % 2 == 1) {
-			// Set the X & Y positions to draw the cricle
-
-			Pastuszak[3] = 2;
+		else if (m_Player % 2 != 1) {
+			stepsGrid[3] = 2;
 			posX[3] = 265;
 			posY[3] = 65;
 			DrawO(&sdc, posX[3], posY[3]);
 			GridErr = 0;
 			return;
 		}
-
 	}
 	else if (point.x > 47 && point.x < 143 && point.y > 152 && point.y < 245) {
-		// Check if their is a player in that postion.
-		if (Pastuszak[4] != 0)
+		if (stepsGrid[4] != 0)
 		{
 			m_Player--;
 			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
-		// Middle - left
-		if (m_Player % 2 == 0)
+		if (m_Player % 2 != 0)
 		{
-			Pastuszak[4] = 1;
+			// Middle - left
+			stepsGrid[4] = 1;
 			posX[4] = 70;
 			posY[4] = 180;
 			GridErr = 0;
-
 			DrawX(&sdc, posX[4], posY[4]);
-
 			return;
 		}
-		else if (m_Player % 2 == 1) {
-			// Set the X & Y positions to draw the cricle
-
-			Pastuszak[4] = 2;
+		else if (m_Player % 2 != 1) {
+			stepsGrid[4] = 2;
 			posX[4] = 65;
 			posY[4] = 165;
 			DrawO(&sdc, posX[4], posY[4]);
 			GridErr = 0;
-
 			return;
 		}
-
 	}
 	else if (point.x > 152 && point.x < 249 && point.y > 152 && point.y < 245) {
-		// Check if their is a player in that postion.
-		if (Pastuszak[5] != 0)
+		if (stepsGrid[5] != 0)
 		{
 			m_Player--;
 			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
-		// Middle - Middle
-		if (m_Player % 2 == 0)
+		
+		if (m_Player % 2 != 0)
 		{
-
-			Pastuszak[5] = 1;
+			// Middle - Middle
+			stepsGrid[5] = 1;
 			posX[5] = 170;
 			posY[5] = 180;
-
 			DrawX(&sdc, posX[5], posY[5]);
 			GridErr = 0;
-
-
 			return;
 		}
-		else if (m_Player % 2 == 1) {
-			// Set the X & Y positions to draw the cricle
-
-			Pastuszak[5] = 2;
+		else if (m_Player % 2 != 1) {
+			stepsGrid[5] = 2;
 			posX[5] = 165;
 			posY[5] = 165;
 			DrawO(&sdc, posX[5], posY[5]);
 			GridErr = 0;
-
 			return;
 		}
-
 	}
 	else if (point.x > 253 && point.x < 350 && point.y > 152 && point.y < 245) {
-		// Check if their is a player in that postion.
-		if (Pastuszak[6] != 0)
+		if (stepsGrid[6] != 0)
 		{
 			m_Player--;
 			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
-		// Middle - Right
-		if (m_Player % 2 == 0)
+		
+		if (m_Player % 2 != 0)
 		{
-
-
-			Pastuszak[6] = 1;
+			//Middle - Right
+			stepsGrid[6] = 1;
 			posX[6] = 270;
 			posY[6] = 180;
-
 			DrawX(&sdc, posX[6], posY[6]);
 			GridErr = 0;
-
 			return;
 		}
-		else if (m_Player % 2 == 1) {
-			// Set the X & Y positions to draw the cricle
+		else if (m_Player % 2 != 1) {
 			point.x = 265;
 			point.y = 165;
-
-			Pastuszak[6] = 2;
+			stepsGrid[6] = 2;
 			posX[6] = 265;
 			posY[6] = 165;
 			DrawO(&sdc, posX[6], posY[6]);
 			GridErr = 0;
-
 			return;
 		}
 
 	}
 	else if (point.x > 47 && point.x < 143 && point.y > 251 && point.y < 351) {
-		// Check if their is a player in that postion.
-		if (Pastuszak[7] != 0)
+		if (stepsGrid[7] != 0)
 		{
 			m_Player--;
 			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
-		// Bottom - left
-		if (m_Player % 2 == 0)
+		
+		if (m_Player % 2 != 0)
 		{
-			Pastuszak[7] = 1;
+			// Bottom - left
+			stepsGrid[7] = 1;
 			posX[7] = 70;
 			posY[7] = 280;
-
 			DrawX(&sdc, posX[7], posY[7]);
 			GridErr = 0;
-
 			return;
 		}
-		else if (m_Player % 2 == 1) {
-			// Set the X & Y positions to draw the cricle
+		else if (m_Player % 2 != 1) {
 			point.x = 65;
 			point.y = 265;
-
-			Pastuszak[7] = 2;
+			stepsGrid[7] = 2;
 			posX[7] = 65;
 			posY[7] = 265;
 			DrawO(&sdc, posX[7], posY[7]);
 			GridErr = 0;
-
 			return;
 		}
 
 	}
 	else if (point.x > 152 && point.x < 249 && point.y > 251 && point.y < 351) {
-		// Check if their is a player in that postion.
-		if (Pastuszak[8] != 0)
+		if (stepsGrid[8] != 0)
 		{
 			m_Player--;
 			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
-		// Bottom - Middle
-		if (m_Player % 2 == 0)
+		
+		if (m_Player % 2 != 0)
 		{
-
-			Pastuszak[8] = 1;
+			// Bottom - Middle
+			stepsGrid[8] = 1;
 			posX[8] = 170;
 			posY[8] = 280;
-
 			DrawX(&sdc, posX[8], posY[8]);
 			GridErr = 0;
-
 			return;
 		}
-		else if (m_Player % 2 == 1) {
-			// Set the X & Y positions to draw the cricle
-
-			Pastuszak[8] = 2;
+		else if (m_Player % 2 != 1) {
+			stepsGrid[8] = 2;
 			posX[8] = 165;
 			posY[8] = 265;
 			DrawO(&sdc, posX[8], posY[8]);
 			GridErr = 0;
 			return;
 		}
-
 	}
 	else if (point.x > 254 && point.x < 350 && point.y > 251 && point.y < 351) {
-		// Check if their is a player in that postion.
-		if (Pastuszak[9] != 0)
+		if (stepsGrid[9] != 0)
 		{
 			m_Player--;
 			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
-		// Bottom - Right
-		if (m_Player % 2 == 0)
+		
+		if (m_Player % 2 != 0)
 		{
-
-			Pastuszak[9] = 1;
+			// Bottom - Right
+			stepsGrid[9] = 1;
 			posX[9] = 270;
 			posY[9] = 280;
-
 			DrawX(&sdc, posX[9], posY[9]);
 			GridErr = 0;
-
 			return;
 		}
-		else if (m_Player % 2 == 1) {
-
-			// Set the X & Y positions to draw the cricle
-			Pastuszak[9] = 2;
+		else if (m_Player % 2 != 1) {
+			stepsGrid[9] = 2;
 			posX[9] = 265;
 			posY[9] = 265;
 			DrawO(&sdc, posX[9], posY[9]);
@@ -598,49 +512,51 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 			return;
 		}
 	}
-	m_Player--;
+	else {
+		GridErr = 2;
+		m_Player--;
+		return;
+	}
 }
 
-void CTicTacToeDlg::DrawLine(CClientDC* pdc, int x, int y, int x2, int y2)// Red Line drawing at game's end
+void CTicTacToeDlg::SetConnected(bool IsConnected)
 {
-	// Declare and create the pens
-	CPen cLine(PS_SOLID, 7, RGB(200, 0, 0));
+	m_IsConnected = IsConnected;
+	GetDlgItem(IDC_SERVER)->EnableWindow(!IsConnected);
+	GetDlgItem(IDC_PORT)->EnableWindow(!IsConnected);
+	GetDlgItem(IDC_CONNECT)->EnableWindow(!IsConnected);
+	GetDlgItem(IDC_DISCONNECT)->EnableWindow(IsConnected);
+}
 
-	// Get the Drawing Area.
-	CRect lRect;
-	GetClientRect(lRect);
-	lRect.NormalizeRect();
-
-	// Caclulate the distane 
-	CPen* lOldPen;	// The Old penobject
-
-	CPoint pStart;	// Define the starting point
-	CPoint pEnd;	// Define the ending point
-
-	// X1=50 X2 =(300-50) 
-	pStart.y = y;
-	pStart.x = x;
-	pEnd.y = y2;
-	pEnd.x = x2;
-
-	lOldPen = pdc->SelectObject(&cLine);
-	// Draw the line
-	pdc->MoveTo(pStart);
-	pdc->LineTo(pEnd);
-
-	// Select the original pen
-	pdc->SelectObject(lOldPen);
+void CTicTacToeDlg::RefreshGame() {
+	int i;
+	for (i = 0; i < 11; i++) {
+		stepsGrid[i] = 0;
+		posX[i] = 0;
+		posY[i] = 0;
+	}
+	m_Player = 0;
+	GridErr = 0;
+	GAME_STATUS = 1;
+	this->UpdateWindow();
+	this->RedrawWindow();
 }
 
 void CTicTacToeDlg::OnLButtonDown(UINT nFlags, CPoint point)
 {
+	CString status;
+	m_status.GetWindowTextA(status);
+	if (status == "Не подключен к серверу" || status == "Ход противника" || status == "Ожидание противника")
+	{
+		return;
+	}
 	if ((nFlags & MK_LBUTTON) == MK_LBUTTON)
 	{
 		char	szMessage[1024];// Сообщение для отправки
 		char	szBuffer[DEFAULT_BUFFER];
 		int		ret, i;
-
 		char	Str[256];
+
 		UpdateData(TRUE);
 
 		long x = point.x;
@@ -659,239 +575,242 @@ void CTicTacToeDlg::OnLButtonDown(UINT nFlags, CPoint point)
 			;
 		else if (ret == SOCKET_ERROR)
 		{
-			sprintf_s(Str, sizeof(Str), "send() failed: %d",
+			sprintf_s(Str, sizeof(Str), "Отправка сообщения не удалась(ошибка: %d)",
 				WSAGetLastError());
 			m_ListBox.AddString((LPTSTR)Str);
-			;
 		}
-
 	}
-
-	// Обработка принятых даннных(наверное)
-	//if ((nFlags & MK_LBUTTON) == MK_LBUTTON)
-	//{
-	//	UpdateData(TRUE);
-
-	//	// Check to see if the hole grid is filled out.
-	//	int i, g = 1;
-	//	for (i = 1; i < 10; i++)
-	//	{
-	//		if (Pastuszak[i] == 1 || Pastuszak[i] == 2) g++;
-	//	}
-
-	//	// Show a message if g = 9 to tell the user it's game over.
-	//	if (g >= 10) {
-	//		MessageBox("Game Over", "Game Over.");
-	//		//GAME_STATUS = 3; // Game Over.
-	//		return;
-	//	}
-
-	//	PlotPlayer(point);
-	//	CheckWhoWon();
-	//}
 	CDialog::OnLButtonDown(nFlags, point);
 }
 
-void CTicTacToeDlg::CheckWhoWon()
+int CTicTacToeDlg::CheckWhoWon()
 {
+	if (GAME_STATUS == 3)
+		return 0;
 	CClientDC pdc(this);
-	//int found=1;	// dis hole the count how many found max 3
-	int iLook;		// iLook is what the current piecs being look at.
+	int cell;// Первый из трех элементов для проверки победы
 
-	// This show how the grid looks like and that how i looking up so that every equals
-
-	//   1|  2  | 3
-	// -------------
-	//   4|  5  | 6
-	// -------------
-	//   7|  8  | 9
-	//MessageBox("Click");
-	// Frist we are going to check down to right \ //
-	iLook = Pastuszak[1]; // the frist element.
-	if (Pastuszak[5] == iLook && Pastuszak[9] == iLook && iLook != 0)
+	cell = stepsGrid[1];
+	if (stepsGrid[5] == cell && stepsGrid[9] == cell && cell != 0)
 	{
-		// Some won the game.
+		// Если кто-то победил
 		DrawLine(&pdc, 50, 50, 350, 350);
-		// Check who won
-		if ((m_Player + 1) == iLook) {
-			MessageBox("Player won the game.");
+		if (m_Player % 2 != 0)
+		{
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			MessageBox("Победили крестики");
 		}
-		else {
-			MessageBox("Computer won the game.");
+		if (m_Player % 2 == 0)
+		{
+
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			MessageBox("Победили нолики");
 		}
 		GAME_STATUS = 3;
-		return;
+		return 1;
 	}
-	// We Find the other way /
-	iLook = Pastuszak[3]; // the frist element.
-	//if (iLook == 0) { return;}
-	if (Pastuszak[5] == iLook && Pastuszak[7] == iLook && iLook != 0)
+
+	cell = stepsGrid[3];
+	if (stepsGrid[5] == cell && stepsGrid[7] == cell && cell != 0)
 	{
-		// Some won the game.
+		// Если кто-то победил
 		DrawLine(&pdc, 350, 50, 50, 350);
-		// Check who won
-		if ((m_Player + 1) == iLook) {
-			MessageBox("Player won the game.");
+		if (m_Player % 2 != 0)
+		{
+
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			MessageBox("Победили крестики");
 		}
-		else {
-			MessageBox("Computer won the game.");
+		if (m_Player % 2 == 0)
+		{
+
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			MessageBox("Победили нолики");
 		}
 		GAME_STATUS = 3;
-		return;
+		return 1;
 	}
-	// So Far Done Check
-	// D=done
-	// D | 2 | D
-	// ---------
-	// 4 | D | 6
-	// ---------
-	// D | 8 | D
 
-	// Look at the top.
-	iLook = Pastuszak[1]; // the frist element.
-	//if (iLook == 0) { return;}
-	if (Pastuszak[2] == iLook && Pastuszak[3] == iLook && iLook != 0)
+	cell = stepsGrid[1];
+	if (stepsGrid[2] == cell && stepsGrid[3] == cell && cell != 0)
 	{
-		// Some won the game.
-
-		// Check who won
+		// Если кто-то победил
 		DrawLine(&pdc, 50, 100, 350, 100);
-		if ((m_Player + 1) == iLook) {
-			MessageBox("Player won the game.");
+		if (m_Player % 2 != 0)
+		{
+
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			MessageBox("Победили крестики");
 		}
-		else {
-			MessageBox("Computer won the game.");
+		if (m_Player % 2 == 0)
+		{
+
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			MessageBox("Победили нолики");
 		}
 		GAME_STATUS = 3;
-
-		return;
+		return 1;
 	}
 
-	// Check the right side going down.
-	iLook = Pastuszak[3]; // the frist element.
-	//if (iLook == 0) { return;}
-	if (Pastuszak[6] == iLook && Pastuszak[9] == iLook && iLook != 0)
+	cell = stepsGrid[3];
+	if (stepsGrid[6] == cell && stepsGrid[9] == cell && cell != 0)
 	{
-		// Some won the game.
+		// Если кто-то победил
 		DrawLine(&pdc, 300, 50, 300, 350);
-		// Check who won
-		if ((m_Player + 1) == iLook) {
-			MessageBox("Player won the game.");
+		if (m_Player % 2 != 0)
+		{
+
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			MessageBox("Победили крестики");
 		}
-		else {
-			MessageBox("Computer won the game.");
+		if (m_Player % 2 == 0)
+		{
+
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			MessageBox("Победили нолики");
 		}
 		GAME_STATUS = 3;
-		return;
+		return 1;
 	}
 
-	// So Far Done Check
-	// D=done
-	// D | D | D
-	// ---------
-	// 4 | D | D
-	// ---------
-	// D | 8 | D
-
-	// Check the bottom.
-	iLook = Pastuszak[7]; // the frist element.
-	//if (iLook == 0) { return;}
-	if (Pastuszak[8] == iLook && Pastuszak[9] == iLook && iLook != 0)
+	cell = stepsGrid[7];
+	if (stepsGrid[8] == cell && stepsGrid[9] == cell && cell != 0)
 	{
-		// Some won the game.
-		// Check who won
+		// Если кто-то победил
 		DrawLine(&pdc, 50, 300, 350, 300);
-		if ((m_Player + 1) == iLook) {
-			MessageBox("Player won the game.");
+		if (m_Player % 2 != 0)
+		{
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			MessageBox("Победили крестики");
 		}
-		else {
-			MessageBox("Computer won the game.");
+		if (m_Player % 2 == 0)
+		{
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			MessageBox("Победили нолики");
 		}
 		GAME_STATUS = 3;
-		return;
+		return 1;
 	}
 
-	// Check the left going down.
-	iLook = Pastuszak[1]; // the frist element.
-	//if (iLook == 0) { return;}
-	if (Pastuszak[4] == iLook && Pastuszak[7] == iLook && iLook != 0)
+	cell = stepsGrid[1];
+	if (stepsGrid[4] == cell && stepsGrid[7] == cell && cell != 0)
 	{
-		// Some won the game.
+		// Если кто-то победил
 		DrawLine(&pdc, 100, 50, 100, 350);
-		// Check who won
-		if ((m_Player + 1) == iLook) {
-			MessageBox("Player won the game.");
+		if (m_Player % 2 != 0)
+		{
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			MessageBox("Победили крестики");
 		}
-		else {
-			MessageBox("Computer won the game.");
+		if (m_Player % 2 == 0)
+		{
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			MessageBox("Победили нолики");
 		}
 		GAME_STATUS = 3;
-
-		return;
+		return 1;
 	}
-	// So Far Done Check
-	// D=done
-	// M=Middle Not Done
-	// D  | DM2  | D
-	// ---------
-	// DM4 | DM5 | DM6
-	// ---------
-	// D  | DM8  | D
 
-	// The Last Two Fun need to done middle and middle up
-
-	// Middle Up
-	iLook = Pastuszak[2]; // the frist element.
-	//if (iLook == 0) { return;}
-	if (Pastuszak[5] == iLook && Pastuszak[8] == iLook && iLook != 0)
+	cell = stepsGrid[2];
+	if (stepsGrid[5] == cell && stepsGrid[8] == cell && cell != 0)
 	{
-		// Some won the game.
-		// Check who won
+		// Если кто-то победил
 		DrawLine(&pdc, 200, 50, 200, 350);
-		if ((m_Player + 1) == iLook) {
-			MessageBox("Player won the game.");
+		if (m_Player % 2 != 0)
+		{
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			MessageBox("Победили крестики");
 		}
-		else {
-			MessageBox("Computer won the game.");
+		if (m_Player % 2 == 0)
+		{
+
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			MessageBox("Победили нолики");
 		}
 		GAME_STATUS = 3;
-		return;
+		return 1;
 	}
 
-	// Middle Side
-	iLook = Pastuszak[4]; // the frist element.
-	//if (iLook == 0) { return;}
-	if (Pastuszak[5] == iLook && Pastuszak[6] == iLook && iLook != 0)
+	cell = stepsGrid[4];
+	if (stepsGrid[5] == cell && stepsGrid[6] == cell && cell != 0)
 	{
-		// Some won the game.
-
-		// Check who won
+		// Если кто-то победил
 		DrawLine(&pdc, 50, 200, 350, 200);
-		if ((m_Player + 1) == iLook) {
-			MessageBox("Player won the game.");
+		if (m_Player % 2 != 0)
+		{
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			MessageBox("Победили крестики");
 		}
-		else {
-			MessageBox("Computer won the game.");
+		if (m_Player % 2 == 0)
+		{
+			if (player)
+				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
+			else
+				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
+			MessageBox("Победили нолики");
 		}
-
 		GAME_STATUS = 3;
-		return;
+		return 1;
 	}
+	return 0;
 }
-
 
 void CTicTacToeDlg::OnBnClickedConnect()
 {
 	//Сначала опишем необходимые локальные переменные и загрузим библиотеку Winsock :
-	char		szServer[128];	// Имя или IP-адрес сервера
-	int		iPort;			// Порт
+	char szServer[128];	// Имя или IP-адрес сервера
+	int	iPort;// Порт
 	WSADATA	wsd;
 	struct sockaddr_in 	server;
 	struct hostent* host = NULL;
 	char Str[256];
 
-	GetDlgItem(IDC_SERVER)->
-		GetWindowText(szServer, sizeof(szServer));
+	GetDlgItem(IDC_SERVER)-> GetWindowText(szServer, sizeof(szServer));
 	GetDlgItem(IDC_PORT)->GetWindowText(Str, sizeof(Str));
 	iPort = atoi(Str);
 	if (iPort <= 0 || iPort >= 0x10000)
@@ -907,8 +826,8 @@ void CTicTacToeDlg::OnBnClickedConnect()
 		return;
 	}
 
-	//Далее создадим сокет :
-	m_sClient = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);//0
+	//Далее создадим сокет:
+	m_sClient = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (m_sClient == INVALID_SOCKET)
 	{
 		sprintf_s(Str, sizeof(Str), "socket() failed: %d\n",
@@ -937,83 +856,238 @@ void CTicTacToeDlg::OnBnClickedConnect()
 			host->h_length);
 	}
 
-	if (connect(m_sClient, (struct sockaddr*)&server,
-		sizeof(server)) == SOCKET_ERROR)
+	if (connect(m_sClient, (struct sockaddr*)&server, sizeof(server)) == SOCKET_ERROR)
 	{
-		sprintf_s(Str, sizeof(Str), "connect() failed: %d",
-			WSAGetLastError());
+		if (WSAGetLastError())// Может тут неверно проверяю??
+			sprintf_s(Str, sizeof(Str), "Не удалось установить соединение");
 		m_ListBox.AddString((LPTSTR)Str);
 		return;
 	}
-	SetConnected(true);
-	sprintf_s(Str, sizeof(Str), "connect() success");
-	m_ListBox.AddString((LPTSTR)Str);
-	AfxBeginThread(ListenThread, NULL);
+
+	char szBuffer[DEFAULT_BUFFER];
+	int ret;
+	ret = recv(m_sClient, szBuffer, DEFAULT_BUFFER, 0);
+	if (ret == 0)
+	{
+		sprintf_s(Str, sizeof(Str), "Сервер переполнен.");
+		m_ListBox.AddString((LPTSTR)Str);
+		return;
+	}
+	else 
+	{
+		SetConnected(true);
+		sprintf_s(Str, sizeof(Str), "Соединение установлено");
+		m_ListBox.AddString((LPTSTR)Str);
+		AfxBeginThread(ListenThread, NULL);
+	}
+
 }
 
 void CTicTacToeDlg::ComputeInformation(CPoint point)
 {
-	// Обработка принятых даннных(наверное)
-	int i, g = 1;
-	for (i = 1; i < 10; i++)
+	// Обработка принятых даннных(координат мыши)
+	if (GAME_STATUS == 3)
 	{
-		if (Pastuszak[i] == 1 || Pastuszak[i] == 2) g++;
-	}
-
-	// Show a message if g = 9 to tell the user it's game over.
-	if (g >= 10) {
-		MessageBox("Game Over", "Game Over.");
-		//GAME_STATUS = 3; // Game Over.
 		return;
 	}
 
 	PlotPlayer(point);
-	CheckWhoWon();
+	if (GridErr)
+	{
+		return;
+	}
+	if (CheckWhoWon() != 1)
+	{
+		int i, j = 1;
+		for (i = 1; i < 10; i++)
+		{
+			if (stepsGrid[i] == 1 || stepsGrid[i] == 2) j++;
+		}
+
+		if (j >= 10) {
+			MessageBox("Игра окончена. Ничья.");
+			m_status.SetWindowTextA("Игра окончена. Ничья.");
+			GAME_STATUS = 3;
+			return;
+		}
+	}
+	if (GAME_STATUS != 3)
+	{
+		if (turn == 1)
+		{
+			turn = 0;
+			m_status.SetWindowTextA("Ход противника");
+		}
+		else if (turn == 0)
+		{
+			turn = 1;
+			m_status.SetWindowTextA("Ваш ход");
+		}
+	}
 }
 
 UINT ListenThread(PVOID lpParam)
 {
 	// Прием данных
-	char	szBuffer[DEFAULT_BUFFER];
-	int		ret;
-	char	Str[256];
-	CListBox* pLB =
-		(CListBox*)(CListBox::FromHandle(hWnd_LB));
+	char szBuffer[DEFAULT_BUFFER];
+	int	 ret;
+	char Str[256];
+	CListBox* pLB = (CListBox*)(CListBox::FromHandle(hWnd_LB));
 
-	CTicTacToeDlg* pDlg = (CTicTacToeDlg*)(CTicTacToeDlg::FromHandle(hWnd_Dlg));
 	while (true)
 	{
 		ret = recv(m_sClient, szBuffer, DEFAULT_BUFFER, 0);
-		if (ret == 0)	// Корректное завершение
+		if (ret == 0)
+		{
+			AfxEndThread(1, true);
 			continue;
+		}
+
 		else if (ret == SOCKET_ERROR)
 		{
-			sprintf_s(Str, sizeof(Str), "recv() failed: %d", WSAGetLastError());
+			if (WSAGetLastError() == 10054)
+				sprintf_s(Str, sizeof(Str), "Вы были отключены от сервера");
+			else
+				sprintf_s(Str, sizeof(Str), "recv() failed: %d", WSAGetLastError());
+
 			pLB->AddString((LPTSTR)Str);
+			mainDlg->RefreshGame();
+			mainDlg->m_status.SetWindowTextA("Не подключен к серверу");
+			mainDlg->GetDlgItem(IDC_REFRESH)->EnableWindow(FALSE);
+			mainDlg->SetConnected(false);
 			return 1;
 		}
 		szBuffer[ret] = '\0';
 		sprintf_s(Str, sizeof(Str), "RECV [%d bytes]: '%s'", ret, szBuffer);
-		pLB->AddString((LPTSTR)Str);
-		int i = 0;
-		CString str = szBuffer;
-		CString str1;
-		CString str2;
-		while (szBuffer[i] != ' ')
+		if (bPrint)
+			pLB->AddString((LPTSTR)Str);
+		mainDlg->ScroolToLastItem();// Автоматическое пролистывание списка в конец
+		if (ret == 1)
 		{
-			str1.Append((CString)szBuffer[i]);
-			i++;
+			CString str1;
+			str1.Append((CString)szBuffer[0]);
+			if (str1 == "9")// Пришло сообщение о том, что подключился второй игрок
+			{
+				if (mainDlg->turn)
+				{
+					mainDlg->m_status.SetWindowTextA("Ваш ход");
+					mainDlg->GetDlgItem(IDC_REFRESH)->EnableWindow(TRUE);
+				}
+			}
+			else if (str1 == "8")// Пришло сообщение о том, что второй игрок отключился
+			{
+				mainDlg->MessageBox("Противник отключился, помянем");
+				mainDlg->m_status.SetWindowTextA("Ожидание противника");
+				mainDlg->GetDlgItem(IDC_REFRESH)->EnableWindow(FALSE);
+				mainDlg->turn = 1;
+				mainDlg->player = 1;
+				mainDlg->RefreshGame();
+			}
+			else if (str1 == "7")// Пришло сообщение о том, что второй игрок начал игру сначала
+			{
+				mainDlg->NewGame();
+			}
+			else// Пришло сообщение о том, что подключение прошло успешно и значение очереди хода. Крестики ходят первыми(1)
+			{
+				mainDlg->player = atoi(str1);// Распределение ролей
+				mainDlg->turn = atoi(str1);
+				if (mainDlg->turn)
+				{
+					mainDlg->m_status.SetWindowTextA("Ожидание противника");
+				}
+				if (!mainDlg->turn)
+				{
+					mainDlg->m_status.SetWindowTextA("Ход противника");
+					mainDlg->GetDlgItem(IDC_REFRESH)->EnableWindow(TRUE);
+				}
+			}
 		}
-		i++;
-		while (szBuffer[i] != '\0')
+		else// Пришло сообщение с координатами хода игрока
 		{
-			str2.Append((CString)szBuffer[i]);
+			int i = 0;
+			CString str1;
+			CString str2;
+			while (szBuffer[i] != ' ')
+			{
+				str1.Append((CString)szBuffer[i]);
+				i++;
+			}
 			i++;
+			while (szBuffer[i] != '\0')
+			{
+				str2.Append((CString)szBuffer[i]);
+				i++;
+			}
+			CPoint point;
+			point.x = atoi(str1);
+			point.y = atoi(str2);
+			mainDlg->ComputeInformation(point);
 		}
-		CPoint point;
-		point.x = atoi(str1);
-		point.y = atoi(str2);
-		mainDlg->ComputeInformation(point);
 	}
 }
 
+void CTicTacToeDlg::OnBnClickedDisconnect()
+{
+	int iResult = shutdown(m_sClient, SD_SEND);
+	if (iResult == SOCKET_ERROR) {
+		printf("disconnect failed: %d\n", WSAGetLastError());
+		closesocket(m_sClient);
+		WSACleanup();
+		return;
+	}
+	SetConnected(false);
+	GetDlgItem(IDC_REFRESH)->EnableWindow(FALSE);
+	RefreshGame();
+	m_status.SetWindowTextA("Не подключен к серверу");
+	m_ListBox.AddString("Соединение разорвано");
+}
+
+void CTicTacToeDlg::OnBnClickedPrint()
+{
+	if (((CButton*)GetDlgItem(IDC_PRINT))->GetCheck() == 1)
+		bPrint = true;
+	else
+		bPrint = false;
+}
+
+void CTicTacToeDlg::ScroolToLastItem()
+{
+	int nNumItems = m_ListBox.GetCount();
+	m_ListBox.SetCurSel(nNumItems - 1);
+	m_ListBox.SetCurSel(-1);
+}
+
+void CTicTacToeDlg::NewGame() {
+	if (player)// Если игрок играл за крестики, то он будет за нолики
+	{
+		m_status.SetWindowTextA("Ход противника");
+		turn = 0;
+		player = 0;
+	}
+	else// Если игрок играл за нолики, то он будет за крестики
+	{
+		m_status.SetWindowTextA("Ваш ход");
+		turn = 1;
+		player = 1;
+	}
+	RefreshGame();
+}// Для кнопки "Начать сначала"
+
+void CTicTacToeDlg::OnBnClickedRefresh()// Перезаупуск игры(Кнопка "начать сначала")
+{
+	int ret;
+	char Str[256];
+	char szMessage[1024];
+	std::string string = "7";// Признак перезапуска игры
+	const char* cstr = string.c_str();
+	sprintf_s(szMessage, sizeof(szMessage), cstr);
+	ret = send(m_sClient, szMessage, strlen(szMessage), 0);
+	if (ret == 0)
+		;
+	else if (ret == SOCKET_ERROR)
+	{
+		sprintf_s(Str, sizeof(Str), "Отправка сообщения не удалась(ошибка: %d)",
+			WSAGetLastError());
+		m_ListBox.AddString((LPTSTR)Str);
+	}
+}
