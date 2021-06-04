@@ -815,14 +815,14 @@ void CTicTacToeDlg::OnBnClickedConnect()
 	iPort = atoi(Str);
 	if (iPort <= 0 || iPort >= 0x10000)
 	{
-		m_ListBox.AddString((LPTSTR)"Port number incorrect");
+		m_ListBox.AddString((LPTSTR)"Неверный порт");
 		return;
 	}
 
 	if (WSAStartup(MAKEWORD(2, 2), &wsd) != 0)
 	{
 		m_ListBox.AddString
-		((LPTSTR)"Failed to load Winsock library!");
+		((LPTSTR)"Не удалось загрузить библиоеку Winsock!");
 		return;
 	}
 
@@ -830,7 +830,7 @@ void CTicTacToeDlg::OnBnClickedConnect()
 	m_sClient = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (m_sClient == INVALID_SOCKET)
 	{
-		sprintf_s(Str, sizeof(Str), "socket() failed: %d\n",
+		sprintf_s(Str, sizeof(Str), "Не удалось создать сокет(Ошибка: %d)\n",
 			WSAGetLastError());
 		m_ListBox.AddString((LPTSTR)Str);
 		return;
@@ -848,7 +848,7 @@ void CTicTacToeDlg::OnBnClickedConnect()
 		if (host == NULL)
 		{
 			sprintf_s(Str, sizeof(Str),
-				"Unable to resolve server: %s", szServer);
+				"Не удалось разрешить адрес сервера: %s", szServer);
 			m_ListBox.AddString((LPTSTR)Str);
 			return;
 		}
