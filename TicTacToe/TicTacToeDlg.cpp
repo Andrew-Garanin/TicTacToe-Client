@@ -26,6 +26,25 @@ bool m_IsConnected;
 SOCKET m_sClient;
 CTicTacToeDlg* mainDlg;
 
+typedef struct CELL_INFORMATION { // Для перерисовки
+	int posX;
+	int posY;
+	int who;
+} CELL_INFORMATION;
+
+CELL_INFORMATION CellArray[10];
+
+bool finishLine=false;
+
+typedef struct FinishLine { // Для перерисовки
+	int x;
+	int y;
+	int x2;
+	int y2;
+} FinishLine;
+
+FinishLine fl;
+
 UINT ListenThread(PVOID lpParam);
 
 CTicTacToeDlg::CTicTacToeDlg(CWnd* pParent /*=nullptr*/)
@@ -115,6 +134,17 @@ void CTicTacToeDlg::OnPaint()
 
 		DrawGrid(&dc);// Отрисовка игрового поля
 
+		for (int i = 1; i < 10; i++)// Отрисовка ходов, если они были
+		{
+			if (CellArray[i].who == 1)
+				DrawX(&cdc, CellArray[i].posX, CellArray[i].posY);
+			if (CellArray[i].who == 2)
+				DrawO(&cdc, CellArray[i].posX, CellArray[i].posY);
+		}
+
+		if (finishLine)// Отрисовка финишной линии, если она есть
+			DrawLine(&cdc, fl.x, fl.y, fl.x2, fl.y2);
+
 		CDialog::OnPaint();
 	}
 }
@@ -133,11 +163,9 @@ void CTicTacToeDlg::DrawGrid(CPaintDC* pdc)
 	CRect Rect;
 	GetClientRect(Rect);
 	Rect.NormalizeRect();
-
-	CPen* pOldPen= pdc->SelectObject(&blackPen);
-
 	CPoint pStart;
 	CPoint pFinish;
+	CPen* pOldPen= pdc->SelectObject(&blackPen);
 
 	// Горизонтальные
 	pStart.y = 150;
@@ -147,14 +175,12 @@ void CTicTacToeDlg::DrawGrid(CPaintDC* pdc)
 	pdc->MoveTo(pStart);
 	pdc->LineTo(pFinish);
 
-
 	pStart.y = 250;
 	pStart.x = 50;
 	pFinish.y = pStart.y;
 	pFinish.x = 350;
 	pdc->MoveTo(pStart);
 	pdc->LineTo(pFinish);
-
 
 	// Вертикальные
 	pStart.y = 50;
@@ -164,13 +190,14 @@ void CTicTacToeDlg::DrawGrid(CPaintDC* pdc)
 	pdc->MoveTo(pStart);
 	pdc->LineTo(pFinish);
 
-
 	pStart.y = 50;
 	pStart.x = 250;
 	pFinish.y = 350;
 	pFinish.x = pStart.x;
 	pdc->MoveTo(pStart);
 	pdc->LineTo(pFinish);
+
+	pdc->SelectObject(pOldPen);
 }
 
 void CTicTacToeDlg::DrawX(CClientDC* pdc, int x, int y)
@@ -180,18 +207,15 @@ void CTicTacToeDlg::DrawX(CClientDC* pdc, int x, int y)
 	CRect Rect;
 	GetClientRect(Rect);
 	Rect.NormalizeRect();
-
-	CPen* pOldPen;
-
 	CPoint pStart;
 	CPoint pEnd;
+	CPen* pOldPen;
+	pOldPen = pdc->SelectObject(&XSize);
 
 	pStart.y = y;
 	pStart.x = x;
 	pEnd.y = y + 50;
 	pEnd.x = x + 50;
-
-	pOldPen = pdc->SelectObject(&XSize);
 	pdc->MoveTo(pStart);
 	pdc->LineTo(pEnd);
 
@@ -199,8 +223,6 @@ void CTicTacToeDlg::DrawX(CClientDC* pdc, int x, int y)
 	pStart.x = x + 50;
 	pEnd.y = y + 50;
 	pEnd.x = x;
-
-	pOldPen = pdc->SelectObject(&XSize);
 	pdc->MoveTo(pStart);
 	pdc->LineTo(pEnd);
 
@@ -214,7 +236,6 @@ void CTicTacToeDlg::DrawO(CClientDC* pdc, int x, int y)
 
 	CPen* pOldPen;
 	CBrush* pOldBrush;
-
 	pOldPen = pdc->SelectObject(&OSize);
 	pOldBrush = pdc->SelectObject(&lBlack);
 
@@ -226,6 +247,12 @@ void CTicTacToeDlg::DrawO(CClientDC* pdc, int x, int y)
 
 void CTicTacToeDlg::DrawLine(CClientDC* pdc, int x, int y, int x2, int y2)// Фиолетовая линия
 {
+	finishLine = true;
+	fl.x = x;
+	fl.y = y;
+	fl.x2 = x2;
+	fl.y2 = y2;
+
 	CPen line(PS_SOLID, 7, RGB(125, 0, 200));
 
 	CRect Rect;
@@ -233,16 +260,14 @@ void CTicTacToeDlg::DrawLine(CClientDC* pdc, int x, int y, int x2, int y2)// Ф�
 	Rect.NormalizeRect();
 
 	CPen* pOldPen;
-
+	pOldPen = pdc->SelectObject(&line);
 	CPoint pStart;
 	CPoint pFinish;
 
 	pStart.y = y;
 	pStart.x = x;
 	pFinish.y = y2;
-	pFinish.x = x2;
-
-	pOldPen = pdc->SelectObject(&line);
+	pFinish.x = x2;	
 	pdc->MoveTo(pStart);
 	pdc->LineTo(pFinish);
 
@@ -255,22 +280,23 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		return;
 	m_Player++;
 
-	CClientDC sdc(this);// device context for painting
+	CClientDC sdc(this);
 	if (point.x > 47 && point.x < 143 && point.y > 47 && point.y < 143)
 	{
 		if (stepsGrid[1] != 0)
 		{
 			m_Player--;
-			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
 		if (m_Player % 2 != 0)
 		{
-			// Top - Left
 			stepsGrid[1] = 1;
 			posX[1] = 70;
 			posY[1] = 70;
+			CellArray[1].posX = 70;
+			CellArray[1].posY = 70;
+			CellArray[1].who = 1;
 			DrawX(&sdc, posX[1], posY[1]);
 			GridErr = 0;
 			return;
@@ -279,6 +305,9 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 			stepsGrid[1] = 2;
 			posX[1] = 65;
 			posY[1] = 65;
+			CellArray[1].posX = 65;
+			CellArray[1].posY = 65;
+			CellArray[1].who = 2;
 			DrawO(&sdc, posX[1], posY[1]);
 			GridErr = 0;
 			return;
@@ -289,16 +318,17 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (stepsGrid[2] != 0)
 		{
 			m_Player--;
-			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}	
 		if (m_Player % 2 != 0)
 		{
-			// Top - Middle
 			stepsGrid[2] = 1;
 			posX[2] = 170;
 			posY[2] = 70;
+			CellArray[2].posX = 170;
+			CellArray[2].posY = 70;
+			CellArray[2].who = 1;
 			DrawX(&sdc, posX[2], posY[2]);
 			GridErr = 0;
 			return;
@@ -307,6 +337,9 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 			stepsGrid[2] = 2;
 			posX[2] = 165;
 			posY[2] = 65;
+			CellArray[2].posX = 165;
+			CellArray[2].posY = 65;
+			CellArray[2].who = 2;
 			DrawO(&sdc, posX[2], posY[2]);
 			GridErr = 0;
 			return;
@@ -316,16 +349,17 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (stepsGrid[3] != 0)
 		{
 			m_Player--;
-			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
 		if (m_Player % 2 != 0)
 		{
-			// Top - Right
 			stepsGrid[3] = 1;
 			posX[3] = 270;
 			posY[3] = 70;
+			CellArray[3].posX = 270;
+			CellArray[3].posY = 70;
+			CellArray[3].who = 1;
 			DrawX(&sdc, posX[3], posY[3]);
 			GridErr = 0;
 			return;
@@ -334,6 +368,9 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 			stepsGrid[3] = 2;
 			posX[3] = 265;
 			posY[3] = 65;
+			CellArray[3].posX = 265;
+			CellArray[3].posY = 65;
+			CellArray[3].who = 2;
 			DrawO(&sdc, posX[3], posY[3]);
 			GridErr = 0;
 			return;
@@ -343,17 +380,18 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (stepsGrid[4] != 0)
 		{
 			m_Player--;
-			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
 		if (m_Player % 2 != 0)
 		{
-			// Middle - left
 			stepsGrid[4] = 1;
 			posX[4] = 70;
 			posY[4] = 180;
 			GridErr = 0;
+			CellArray[4].posX = 70;
+			CellArray[4].posY = 180;
+			CellArray[4].who = 1;
 			DrawX(&sdc, posX[4], posY[4]);
 			return;
 		}
@@ -361,6 +399,9 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 			stepsGrid[4] = 2;
 			posX[4] = 65;
 			posY[4] = 165;
+			CellArray[4].posX = 65;
+			CellArray[4].posY = 165;
+			CellArray[4].who = 2;
 			DrawO(&sdc, posX[4], posY[4]);
 			GridErr = 0;
 			return;
@@ -370,17 +411,18 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (stepsGrid[5] != 0)
 		{
 			m_Player--;
-			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
 		
 		if (m_Player % 2 != 0)
 		{
-			// Middle - Middle
 			stepsGrid[5] = 1;
 			posX[5] = 170;
 			posY[5] = 180;
+			CellArray[5].posX = 170;
+			CellArray[5].posY = 180;
+			CellArray[5].who = 1;
 			DrawX(&sdc, posX[5], posY[5]);
 			GridErr = 0;
 			return;
@@ -389,6 +431,9 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 			stepsGrid[5] = 2;
 			posX[5] = 165;
 			posY[5] = 165;
+			CellArray[5].posX = 165;
+			CellArray[5].posY = 165;
+			CellArray[5].who = 2;
 			DrawO(&sdc, posX[5], posY[5]);
 			GridErr = 0;
 			return;
@@ -398,17 +443,18 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (stepsGrid[6] != 0)
 		{
 			m_Player--;
-			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
 		
 		if (m_Player % 2 != 0)
 		{
-			//Middle - Right
 			stepsGrid[6] = 1;
 			posX[6] = 270;
 			posY[6] = 180;
+			CellArray[6].posX = 270;
+			CellArray[6].posY = 180;
+			CellArray[6].who = 1;
 			DrawX(&sdc, posX[6], posY[6]);
 			GridErr = 0;
 			return;
@@ -419,6 +465,9 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 			stepsGrid[6] = 2;
 			posX[6] = 265;
 			posY[6] = 165;
+			CellArray[6].posX = 265;
+			CellArray[6].posY = 165;
+			CellArray[6].who = 2;
 			DrawO(&sdc, posX[6], posY[6]);
 			GridErr = 0;
 			return;
@@ -429,17 +478,18 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (stepsGrid[7] != 0)
 		{
 			m_Player--;
-			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
 		
 		if (m_Player % 2 != 0)
 		{
-			// Bottom - left
 			stepsGrid[7] = 1;
 			posX[7] = 70;
 			posY[7] = 280;
+			CellArray[7].posX = 70;
+			CellArray[7].posY = 280;
+			CellArray[7].who = 1;
 			DrawX(&sdc, posX[7], posY[7]);
 			GridErr = 0;
 			return;
@@ -450,6 +500,9 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 			stepsGrid[7] = 2;
 			posX[7] = 65;
 			posY[7] = 265;
+			CellArray[7].posX = 65;
+			CellArray[7].posY = 265;
+			CellArray[7].who = 2;
 			DrawO(&sdc, posX[7], posY[7]);
 			GridErr = 0;
 			return;
@@ -460,17 +513,18 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (stepsGrid[8] != 0)
 		{
 			m_Player--;
-			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
 		
 		if (m_Player % 2 != 0)
 		{
-			// Bottom - Middle
 			stepsGrid[8] = 1;
 			posX[8] = 170;
 			posY[8] = 280;
+			CellArray[8].posX = 170;
+			CellArray[8].posY = 280;
+			CellArray[8].who = 1;
 			DrawX(&sdc, posX[8], posY[8]);
 			GridErr = 0;
 			return;
@@ -479,6 +533,9 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 			stepsGrid[8] = 2;
 			posX[8] = 165;
 			posY[8] = 265;
+			CellArray[8].posX = 165;
+			CellArray[8].posY = 265;
+			CellArray[8].who = 2;
 			DrawO(&sdc, posX[8], posY[8]);
 			GridErr = 0;
 			return;
@@ -488,17 +545,18 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 		if (stepsGrid[9] != 0)
 		{
 			m_Player--;
-			MessageBox("This square is aready taken.");
 			GridErr = 1;
 			return;
 		}
 		
 		if (m_Player % 2 != 0)
 		{
-			// Bottom - Right
 			stepsGrid[9] = 1;
 			posX[9] = 270;
 			posY[9] = 280;
+			CellArray[9].posX = 270;
+			CellArray[9].posY = 280;
+			CellArray[9].who = 1;
 			DrawX(&sdc, posX[9], posY[9]);
 			GridErr = 0;
 			return;
@@ -507,6 +565,9 @@ void CTicTacToeDlg::PlotPlayer(CPoint point)
 			stepsGrid[9] = 2;
 			posX[9] = 265;
 			posY[9] = 265;
+			CellArray[9].posX = 265;
+			CellArray[9].posY = 265;
+			CellArray[9].who = 2;
 			DrawO(&sdc, posX[9], posY[9]);
 			GridErr = 0;
 			return;
@@ -534,11 +595,19 @@ void CTicTacToeDlg::RefreshGame() {
 		stepsGrid[i] = 0;
 		posX[i] = 0;
 		posY[i] = 0;
+		CellArray[i].posX = 0;
+		CellArray[i].posY = 0;
+		CellArray[i].who = 0;
 	}
+	finishLine = false;
+	fl.x = 0;
+	fl.y = 0;
+	fl.x2 = 0;
+	fl.y2 = 0;
 	m_Player = 0;
 	GridErr = 0;
 	GAME_STATUS = 1;
-	this->UpdateWindow();
+	this->UpdateWindow(); 
 	this->RedrawWindow();
 }
 
@@ -578,6 +647,7 @@ void CTicTacToeDlg::OnLButtonDown(UINT nFlags, CPoint point)
 			sprintf_s(Str, sizeof(Str), "Отправка сообщения не удалась(ошибка: %d)",
 				WSAGetLastError());
 			m_ListBox.AddString((LPTSTR)Str);
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 	}
 	CDialog::OnLButtonDown(nFlags, point);
@@ -601,7 +671,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
-			MessageBox("Победили крестики");
+			m_ListBox.AddString("Победили крестики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		if (m_Player % 2 == 0)
 		{
@@ -610,7 +681,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
-			MessageBox("Победили нолики");
+			m_ListBox.AddString("Победили нолики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		GAME_STATUS = 3;
 		return 1;
@@ -628,7 +700,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
-			MessageBox("Победили крестики");
+			m_ListBox.AddString("Победили крестики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		if (m_Player % 2 == 0)
 		{
@@ -637,7 +710,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
-			MessageBox("Победили нолики");
+			m_ListBox.AddString("Победили нолики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		GAME_STATUS = 3;
 		return 1;
@@ -655,7 +729,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
-			MessageBox("Победили крестики");
+			m_ListBox.AddString("Победили крестики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		if (m_Player % 2 == 0)
 		{
@@ -664,7 +739,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
-			MessageBox("Победили нолики");
+			m_ListBox.AddString("Победили нолики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		GAME_STATUS = 3;
 		return 1;
@@ -682,7 +758,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
-			MessageBox("Победили крестики");
+			m_ListBox.AddString("Победили крестики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		if (m_Player % 2 == 0)
 		{
@@ -691,7 +768,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
-			MessageBox("Победили нолики");
+			m_ListBox.AddString("Победили нолики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		GAME_STATUS = 3;
 		return 1;
@@ -708,7 +786,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
-			MessageBox("Победили крестики");
+			m_ListBox.AddString("Победили крестики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		if (m_Player % 2 == 0)
 		{
@@ -716,7 +795,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
-			MessageBox("Победили нолики");
+			m_ListBox.AddString("Победили нолики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		GAME_STATUS = 3;
 		return 1;
@@ -733,7 +813,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
-			MessageBox("Победили крестики");
+			m_ListBox.AddString("Победили крестики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		if (m_Player % 2 == 0)
 		{
@@ -741,7 +822,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
-			MessageBox("Победили нолики");
+			m_ListBox.AddString("Победили нолики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		GAME_STATUS = 3;
 		return 1;
@@ -758,7 +840,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
-			MessageBox("Победили крестики");
+			m_ListBox.AddString("Победили крестики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		if (m_Player % 2 == 0)
 		{
@@ -767,7 +850,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
-			MessageBox("Победили нолики");
+			m_ListBox.AddString("Победили нолики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		GAME_STATUS = 3;
 		return 1;
@@ -784,7 +868,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
-			MessageBox("Победили крестики");
+			m_ListBox.AddString("Победили крестики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		if (m_Player % 2 == 0)
 		{
@@ -792,7 +877,8 @@ int CTicTacToeDlg::CheckWhoWon()
 				m_status.SetWindowTextA("Игра окончена. Вы проиграли.");
 			else
 				m_status.SetWindowTextA("Игра окончена. Вы одержали победу над противником.");
-			MessageBox("Победили нолики");
+			m_ListBox.AddString("Победили нолики");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		}
 		GAME_STATUS = 3;
 		return 1;
@@ -816,6 +902,7 @@ void CTicTacToeDlg::OnBnClickedConnect()
 	if (iPort <= 0 || iPort >= 0x10000)
 	{
 		m_ListBox.AddString((LPTSTR)"Неверный порт");
+		ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		return;
 	}
 
@@ -823,6 +910,7 @@ void CTicTacToeDlg::OnBnClickedConnect()
 	{
 		m_ListBox.AddString
 		((LPTSTR)"Не удалось загрузить библиоеку Winsock!");
+		ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		return;
 	}
 
@@ -833,6 +921,7 @@ void CTicTacToeDlg::OnBnClickedConnect()
 		sprintf_s(Str, sizeof(Str), "Не удалось создать сокет(Ошибка: %d)\n",
 			WSAGetLastError());
 		m_ListBox.AddString((LPTSTR)Str);
+		ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		return;
 	}
 	server.sin_family = AF_INET;
@@ -850,6 +939,7 @@ void CTicTacToeDlg::OnBnClickedConnect()
 			sprintf_s(Str, sizeof(Str),
 				"Не удалось разрешить адрес сервера: %s", szServer);
 			m_ListBox.AddString((LPTSTR)Str);
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 			return;
 		}
 		CopyMemory(&server.sin_addr, host->h_addr_list[0],
@@ -861,6 +951,7 @@ void CTicTacToeDlg::OnBnClickedConnect()
 		if (WSAGetLastError())// Может тут неверно проверяю??
 			sprintf_s(Str, sizeof(Str), "Не удалось установить соединение");
 		m_ListBox.AddString((LPTSTR)Str);
+		ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		return;
 	}
 
@@ -871,6 +962,7 @@ void CTicTacToeDlg::OnBnClickedConnect()
 	{
 		sprintf_s(Str, sizeof(Str), "Сервер переполнен.");
 		m_ListBox.AddString((LPTSTR)Str);
+		ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		return;
 	}
 	else 
@@ -878,9 +970,9 @@ void CTicTacToeDlg::OnBnClickedConnect()
 		SetConnected(true);
 		sprintf_s(Str, sizeof(Str), "Соединение установлено");
 		m_ListBox.AddString((LPTSTR)Str);
+		ScroolToLastItem();// Автоматическое пролистывание списка в конец
 		AfxBeginThread(ListenThread, NULL);
 	}
-
 }
 
 void CTicTacToeDlg::ComputeInformation(CPoint point)
@@ -905,7 +997,8 @@ void CTicTacToeDlg::ComputeInformation(CPoint point)
 		}
 
 		if (j >= 10) {
-			MessageBox("Игра окончена. Ничья.");
+			m_ListBox.AddString("Игра окончена. Ничья.");
+			ScroolToLastItem();// Автоматическое пролистывание списка в конец
 			m_status.SetWindowTextA("Игра окончена. Ничья.");
 			GAME_STATUS = 3;
 			return;
@@ -976,7 +1069,7 @@ UINT ListenThread(PVOID lpParam)
 			}
 			else if (str1 == "8")// Пришло сообщение о том, что второй игрок отключился
 			{
-				mainDlg->MessageBox("Противник отключился, помянем");
+				pLB->AddString("Противник отключился, помянем");
 				mainDlg->m_status.SetWindowTextA("Ожидание противника");
 				mainDlg->GetDlgItem(IDC_REFRESH)->EnableWindow(FALSE);
 				mainDlg->turn = 1;
@@ -1040,6 +1133,7 @@ void CTicTacToeDlg::OnBnClickedDisconnect()
 	RefreshGame();
 	m_status.SetWindowTextA("Не подключен к серверу");
 	m_ListBox.AddString("Соединение разорвано");
+	ScroolToLastItem();// Автоматическое пролистывание списка в конец
 }
 
 void CTicTacToeDlg::OnBnClickedPrint()
@@ -1089,5 +1183,6 @@ void CTicTacToeDlg::OnBnClickedRefresh()// Перезаупуск игры(Кн�
 		sprintf_s(Str, sizeof(Str), "Отправка сообщения не удалась(ошибка: %d)",
 			WSAGetLastError());
 		m_ListBox.AddString((LPTSTR)Str);
+		ScroolToLastItem();// Автоматическое пролистывание списка в конец
 	}
 }
